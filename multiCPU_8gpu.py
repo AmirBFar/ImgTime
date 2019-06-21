@@ -1,0 +1,162 @@
+import simpy
+from multiprocessing import Process
+from scipy.stats import truncnorm
+from numpy.random import randint
+from colorama import Fore, Back, Style, init
+import matplotlib.pyplot as plt
+import csv
+import scipy as sp
+
+init(autoreset=True)
+
+class Stage1(object):
+    def __init__(self, env, nbTasks, nbNodes_stg1, nbNodes_stg2, data1, data2):
+        
+        self.data1 = data1
+        self.data2 = data2
+        self.env = env
+        self.nbTasks = nbTasks
+        self.nbNodes_stg1 = nbNodes_stg1
+        self.nbNodes_stg2 = nbNodes_stg2
+
+        self.nodeDict_stg1 = {}
+        for cpu in range(self.nbNodes_stg1):
+            self.nodeDict_stg1["cpu%d"%cpu] = simpy.Resource(self.env, capacity=1)
+
+        self.nodeDict_stg2 = {}
+        for gpu in range(self.nbNodes_stg2):
+            self.nodeDict_stg2["gpu%d"%gpu] = simpy.PriorityResource(self.env, capacity=1)
+
+        self.sysTime = [0 for i in range(self.nbTasks+2)]
+        self.departedStg1 = []
+        self.departedStg2 = 0
+
+        self.action1 = self.env.process(self.stg1Runner())
+        self.action2 = self.env.process(self.stg2Runner())
+
+        self.totalTime = None
+
+    def stg1Runner(self):
+        taskIdx = 0
+        while True:
+            for cpu in range(self.nbNodes_stg1):
+                if self.nodeDict_stg1["cpu%d"%cpu].count == 0:
+                    taskIdx += 1
+                    ###print("task %d entered stage1 at cpu%d"%(taskIdx,cpu))
+                    self.env.process(self.stg1Service(cpu,taskIdx))
+
+            yield self.env.timeout(0.1)
+
+            if taskIdx == self.nbTasks:
+                ###print("No more tasks for stage1")
+                break
+    
+    def stg1Service(self, cpu, taskIdx):
+        with self.nodeDict_stg1["cpu%d"%cpu].request() as req:
+            self.updateSysTime(taskIdx)
+            yield self.env.timeout(self.servTimeImperical("stage1"))
+            ###print(Fore.GREEN+"task %d departed stage1 at cpu%d"%(taskIdx,cpu))
+            self.departedStg1.append(taskIdx)
+
+    def stg2Runner(self):
+        while True:
+            with self.nodeDict_stg2["gpu0"].request() as req1, self.nodeDict_stg2["gpu1"].request() as req2, self.nodeDict_stg2["gpu2"].request() as req3, self.nodeDict_stg2["gpu3"].request() as req4, self.nodeDict_stg2["gpu4"].request() as req5, self.nodeDict_stg2["gpu5"].request() as req6, self.nodeDict_stg2["gpu6"].request() as req7, self.nodeDict_stg2["gpu7"].request() as req8:
+                yield req1 | req2 | req3 | req4 | req5 | req6 | req7 | req8
+            if len(self.departedStg1) > 0 :
+                for gpu in range(self.nbNodes_stg2):
+                    if self.nodeDict_stg2["gpu%d"%gpu].count == 0:
+                        ###print(Fore.RED+"task %d entered stage2 at gpu%d"%(self.departedStg1[0],gpu))
+                        self.env.process(self.stg2Service(gpu, self.departedStg1[0]))
+                        del self.departedStg1[0]
+                        break
+
+            if self.departedStg2 == self.nbTasks:
+                print(Fore.GREEN+"The total run time for %d tasks is %.2f"%(self.nbTasks,self.env.now))
+                self.totalTime = self.env.now
+                break
+            
+            yield self.env.timeout(0.1)
+
+    def stg2Service(self, gpu, taskIdx):
+        with self.nodeDict_stg2["gpu%d"%gpu].request(priority=taskIdx) as req:
+            yield self.env.timeout(self.servTimeImperical("stage2"))
+            #print(Fore.BLUE+"task %d departed stage2 at gpu%d"%(taskIdx,gpu))
+            self.updateSysTime(taskIdx)
+            self.departedStg2 += 1
+
+    def servTimeGaussian(self,mean, std, minVal, maxVal):
+        servTime = truncnorm.rvs((minVal-mean)/std,(maxVal-mean)/std,loc=mean,scale=std)
+        return servTime
+
+    def servTimeImperical(self, stage):
+        if stage == "stage1":
+            return self.data1[randint(len(self.data1))]
+        if stage == "stage2":
+            return self.data2[randint(len(self.data2))]
+
+    def updateSysTime(self,idx):
+        self.sysTime[idx] = self.env.now - self.sysTime[idx]
+
+    def printSysTime(self):
+        plt.hist(self.sysTime, 200, density=True, facecolor='g', alpha=0.75)
+        plt.xlabel('Service Time')
+        plt.ylabel('Probability')
+        plt.title('Histogram of service time with %d task'%self.nbTasks)
+        plt.show()
+
+class csv_data_reader(object):
+    def __init__(self,fileName):
+        self.fileName = fileName
+
+    def list(self):
+        with open(self.fileName , 'r') as f:
+            reader = csv.reader(f)
+            output = list(reader)
+        output = [float(output[i][1]) for i in range(1,len(output))]
+        return output
+
+    def fit(self,dist_name):
+        dist = getattr(sp.stats, dist_name)
+        param = dist.fit(self.list())
+        print('parameters for %s distribution'%dist_name, param)
+        x = sp.arange(max(self.list()))
+        pdf_fitted = dist.pdf(x, *param[:-2], loc=param[-2], scale=param[-1])
+        return x, pdf_fitted
+    
+    def plot(self,taskID):
+        exeTimes = self.list()
+        x, beta = self.fit('beta')
+        x, cauchy = self.fit('foldcauchy')
+        x, weibull = self.fit('exponweib')
+        plt.hist(exeTimes, 200, density=True, facecolor='g', alpha=0.75, label='data')
+        chy, = plt.plot(x, cauchy, '-b', label='Folded Cauchy distribution')
+        plt.legend(loc=0)
+        plt.xlabel('Service Time')
+        plt.ylabel('Probability')
+        plt.title('Histogram of service time with %d task%d'%(len(exeTimes),taskID))
+        plt.show()
+        
+data1 = csv_data_reader('data1.csv').list()
+data2 = csv_data_reader('data2.csv').list()
+numberOfTasks = 2000
+numberOfNodes_2ndStage = 8
+numberOfNodes_1stStage_list = range(8,31)[::2]
+avgRunTimes = []
+totalTimes = []
+for numberOfNodes_1stStage in numberOfNodes_1stStage_list: 
+    env = simpy.Environment()
+    sim = Stage1(env, numberOfTasks, numberOfNodes_1stStage, numberOfNodes_2ndStage, data1, data2)
+    env.run()
+    print("simulations with %d CPUs are completed"%numberOfNodes_1stStage)
+    avgRunTimes.append(sim.totalTime/numberOfTasks)
+    totalTimes.append(sim.totalTime)
+    
+
+plt.plot(numberOfNodes_1stStage_list, totalTimes, ':bx', mew=3, markersize=10,linewidth=3)
+plt.xlabel("Number of CPUs")
+plt.ylabel("Total time for %d images"%numberOfTasks)
+plt.title("#GPUs=%d"%numberOfNodes_2ndStage)
+plt.xticks(numberOfNodes_1stStage_list)
+plt.savefig('AverageTime_%dGPUs.pdf'%numberOfNodes_2ndStage)
+plt.show()
+print(avgRunTimes)

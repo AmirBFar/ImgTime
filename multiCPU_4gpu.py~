@@ -60,8 +60,8 @@ class Stage1(object):
 
     def stg2Runner(self):
         while True:
-            with self.nodeDict_stg2["gpu0"].request() as req1, self.nodeDict_stg2["gpu1"].request() as req2, self.nodeDict_stg2["gpu2"].request() as req3, self.nodeDict_stg2["gpu3"].request() as req4, self.nodeDict_stg2["gpu4"].request() as req5, self.nodeDict_stg2["gpu5"].request() as req6, self.nodeDict_stg2["gpu6"].request() as req7, self.nodeDict_stg2["gpu7"].request() as req8:
-                yield req1 | req2 | req3 | req4 | req5 | req6 | req7 | req8
+            with self.nodeDict_stg2["gpu0"].request() as req1, self.nodeDict_stg2["gpu1"].request() as req2, self.nodeDict_stg2["gpu2"].request() as req3, self.nodeDict_stg2["gpu3"].request() as req4:
+                yield req1 | req2 | req3 | req4
             if len(self.departedStg1) > 0 :
                 for gpu in range(self.nbNodes_stg2):
                     if self.nodeDict_stg2["gpu%d"%gpu].count == 0:
@@ -139,8 +139,8 @@ class csv_data_reader(object):
 data1 = csv_data_reader('data1.csv').list()
 data2 = csv_data_reader('data2.csv').list()
 numberOfTasks = 2000
-numberOfNodes_2ndStage = 8
-numberOfNodes_1stStage_list = range(8,31)[::2]
+numberOfNodes_2ndStage = 4
+numberOfNodes_1stStage_list = range(4,21)[::2]
 avgRunTimes = []
 totalTimes = []
 for numberOfNodes_1stStage in numberOfNodes_1stStage_list: 
@@ -154,7 +154,7 @@ for numberOfNodes_1stStage in numberOfNodes_1stStage_list:
 
 plt.plot(numberOfNodes_1stStage_list, totalTimes, ':bx', mew=3, markersize=10,linewidth=3)
 plt.xlabel("Number of CPUs")
-plt.ylabel("Total time for %d images (hr)"%numberOfTasks)
+plt.ylabel("Total time for %d images"%numberOfTasks)
 plt.title("#GPUs=%d"%numberOfNodes_2ndStage)
 plt.xticks(numberOfNodes_1stStage_list)
 plt.savefig('AverageTime_%dGPUs.pdf'%numberOfNodes_2ndStage)

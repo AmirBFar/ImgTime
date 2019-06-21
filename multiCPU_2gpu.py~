@@ -138,7 +138,7 @@ class csv_data_reader(object):
         
 data1 = csv_data_reader('data1.csv').list()
 data2 = csv_data_reader('data2.csv').list()
-numberOfTasks = 2000
+numberOfTasks = 100
 numberOfNodes_2ndStage = 8
 numberOfNodes_1stStage_list = range(8,31)[::2]
 avgRunTimes = []

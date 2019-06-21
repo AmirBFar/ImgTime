@@ -149,12 +149,12 @@ for numberOfNodes_1stStage in numberOfNodes_1stStage_list:
     env.run()
     print("simulations with %d CPUs are completed"%numberOfNodes_1stStage)
     avgRunTimes.append(sim.totalTime/numberOfTasks)
-    totalTimes.append(sim.totalTime)
+    totalTimes.append(sim.totalTime/3600)
     
 
 plt.plot(numberOfNodes_1stStage_list, totalTimes, ':bx', mew=3, markersize=10,linewidth=3)
 plt.xlabel("Number of CPUs")
-plt.ylabel("Total time for %d images"%numberOfTasks)
+plt.ylabel("Total time for %d images (hr)"%numberOfTasks)
 plt.title("#GPUs=%d"%numberOfNodes_2ndStage)
 plt.xticks(numberOfNodes_1stStage_list)
 plt.savefig('AverageTime_%dGPUs.pdf'%numberOfNodes_2ndStage)
